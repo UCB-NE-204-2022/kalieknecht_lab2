@@ -1,3 +1,4 @@
 *.h5
 *.jpg
 *.html
+*.ipynb_checkpoints
