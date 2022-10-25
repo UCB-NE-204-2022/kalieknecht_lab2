@@ -1,6 +1,6 @@
 import numpy as np
 import h5py
-from scipy.optimize import curve_fit
+
 import matplotlib.pyplot as plt
 
 def find_activity(t12,A0,time_elapsed):
@@ -99,58 +99,5 @@ def subtract_baseline(waveforms,
     
     return bkg_subtracted_waveforms
 
-def exponential(t, a, tau):
-    return a * np.exp(-t / tau)
 
-def fit_tau(waveform, 
-        pre_sample_length=1100, 
-        fit_length = 2000,
-        show_plot=False,
-        plot_save_name=None):
-    '''
-    Find time constant (tau) of waveform
-    
-    Parameters
-    ----------
-    waveform: np.array
-        raw waveform data
-    pre_sample_length: int
-        start of decay fit
-    fit_length: int
-        length of data to fit
-    show_plot: bool
-        whether to show plot of waveform and exponential fit
-    plot_save_name: str
-        plot savename (include file extension)
-    
-    Returns
-    -------
-    tau: float
-        fitted tau value for waveform
-    '''
-    
-    # grab portion of waveform for fitting
-    decay_waveform = waveform[pre_sample_length:pre_sample_length+fit_length]
-    
-    x = np.arange(0, fit_length)
-    x_norm = (x - x[0]) / (x[-1] - x[0])
-    
-    # initial guesses for values
-    tau_0 = 10000/fit_length
-    a_0 = decay_waveform[0]
-    popt, pcov = curve_fit(exponential, x_norm, decay_waveform, p0=(a_0, tau_0))
-    a, tau_norm = popt
-    tau = tau_norm * fit_length
-    if show_plot:
-        plt.figure()
-        fit_vals = exponential(x_norm, a, tau_norm)
-        plt.plot(waveform,label='Raw Waveform')
-        plt.plot(x+pre_sample_length, fit_vals,label='Exponential Fit')
-        plt.xlabel('Time (Clock Cycles)')
-        plt.ylabel('Magnitued (ADC Units)')
-        plt.text(3800,25,r'$\tau$='+str(round(tau,2)))
-        plt.legend()
-        plt.show()
-        if plot_save_name is not None:
-            plt.savefig(plot_save_name)
-    return tau
+
