@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.signal import savgol_filter
+from scipy.signal import find_peaks, peak_prominences
 
 def find_trapezoid_heights(filtered_waveforms):
     '''
@@ -46,3 +48,39 @@ def plot_trapezoid_height_histogram(trapezoid_heights,
     if save_name is not None:
         plt.savefig(save_name)
     return
+
+def make_calibration_spectrum(trapezoid_heights,
+    bins=5000,
+    max_scaler=110):
+    '''
+    Make calibration spectrum
+    
+    Params
+    ------
+    max_scaler: float
+        multiplication factor to trap height min to scale max of histogram
+    
+    Returns
+    -------
+    
+    '''
+    calib_spectrum = np.histogram(trapezoid_heights, bins=bins, range=(trapezoid_heights.min(),trapezoid_heights.min()*max_scaler))
+    
+def gaus(x, A, x0, sigma):
+    '''
+    Definition of gaussian for use in FWHM/peak fitting
+    '''
+    return A * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+
+def find_peaks(calibration_spectrum,
+        prominence=100):
+    '''
+    Find peaks in spectrum for calibration
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    '''
+    peaks, prominences = find_peaks(calibration_spectrum[0], prominence = prominence)
