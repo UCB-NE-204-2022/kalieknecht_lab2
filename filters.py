@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
-class TrapezoidalFilter():
+class JordanovFilter():
     # We use the notation used in
     #V.T. Jordanoo, G.F. Knoll/Nucl. Instr. and Meth . in Phys. Res. A 345 (1994) 337-345
     def __init__(self, 
@@ -88,12 +88,112 @@ class TrapezoidalFilter():
         assert v.shape
         return d_kl
 
+class BogovacFilter():
+    '''
+    M. Bogovac, M. Jakˇsi´c, D. Wegrzynek, and A. Markowicz,
+    Digital pulse processor for ion beam microprobe imaging,"
+    Nuclear Instruments and Methods in Physics Research Section B:
+    Beam Interactions with Materials and Atoms, vol. 267, no. 12, 
+    pp. 2073{2076, Jun. 2009, doi: 10.1016/j.nimb.2009.03.033.
+    '''
+    def __init__(self, peaking_time, gap_time, decay_time):
+        self.peaking_time = peaking_time
+        self.gap_time = gap_time
+        self.decay_time = decay_time
+        self.k = None
+        self.l = None
+    
+    def filter_waveform(self, raw_data, sampling_interval=4e-9, normalize=True):
+        self.k = int(self.peaking_time / sampling_interval)
+        self.l = int(self.k + (self.gap_time / sampling_interval))
+        self.M = int(self.decay_time / sampling_interval)
+        d_kl = self.get_d_kl_batch(raw_data, normalize=normalize)
+        d_kl_cumsum = np.cumsum(d_kl, axis=1)
+        r_n = d_kl_cumsum
+        r_n[:, 1:] = r_n[:, 1:] - np.exp(-1 / self.M) * (d_kl_cumsum[:, :-1])
+        return np.cumsum(r_n, axis=1)
+    
+    def get_d_kl_batch(self, v, pretrigger_idx=200, normalize=True):
+        if normalize == True:
+            baseline = v[:, :pretrigger_idx].mean(axis=1, keepdims=True)
+            v = (v - baseline) / v.max()
+        # padding v by k+l with the noise mean
+        noise_mean = v[:, :pretrigger_idx].mean()
+        v_padded = np.pad(
+            v,
+            ((0, 0), (self.k + self.l, 0)),
+            mode="constant",
+            constant_values=(noise_mean))
+        d_kl = (
+            v_padded[:, self.k + self.l :]
+            - v_padded[:, self.l : -self.k]
+            - v_padded[:, self.k : -self.l]
+            + v_padded[:, : -(self.k + self.l)])
+        assert v.shape == d_kl.shape
+        return d_kl
+class CooperFilter():
+    '''
+    # From Ren Cooper's document and also the online blog post https://nukephysik101.wordpress.
+    '''
+    def __init__(self, peaking_time, gap_time, decay_time):
+        self.peaking_time = peaking_time
+        self.gap_time = gap_time
+        self.decay_time = decay_time
+        self.k = None
+        self.l = None
+    
+    def filter_waveform(self, raw_data, sampling_interval=4e-9, normalize=True):
+        self.k = int(self.peaking_time / sampling_interval)
+        self.l = int(self.k + (self.gap_time / sampling_interval))
+        self.M = int(self.decay_time / sampling_interval)
+        Tr_prime = self.get_Tr_prime_batch(raw_data, normalize=True)
+        d_kl = self.get_d_kl_batch(Tr_prime, normalize=False)
+        return np.cumsum(d_kl, axis=1)
+    
+    def get_Tr_prime_batch(self, v, pretrigger_idx=200, normalize=True):
+        # Batch normalization
+        # TODO it would be good to experiment with different normalization scheme
+        if normalize == True:
+            baseline = v[:, :pretrigger_idx].mean(axis=1, keepdims=True)
+            v = (v - baseline) / v.max()
+        # padding v by k+l with the noise mean
+        noise_mean = v[:, :pretrigger_idx].mean()
+        v_padded = np.pad(
+            v,
+            ((0, 0), (1, 0)),
+            mode="constant",
+            constant_values=(noise_mean))
+        Tr_prime = np.cumsum(v_padded[:, 1:] - (1 - 1 / self.M) * v_padded[:, :-1], 
+            axis=1)
+        assert v.shape == Tr_prime.shape
+        return Tr_prime
+    
+    def get_d_kl_batch(self, tr_prime, pretrigger_idx=200, normalize=True):
+        v = tr_prime
+        if normalize == True:
+            baseline = v[:, :pretrigger_idx].mean()
+            v = (v - baseline) / (v.max() - baseline)
+        # padding v by k+l with the noise mean
+        noise_mean = v[:, :pretrigger_idx].mean()
+        v_padded = np.pad(
+            v,
+            ((0, 0), (self.k + self.l, 0)),
+            mode="constant",
+            constant_values=(noise_mean))
+        d_kl = (
+            v_padded[:, self.k + self.l :]
+            - v_padded[:, self.l : -self.k]
+            - v_padded[:, self.k : -self.l]
+            + v_padded[:, : -(self.k + self.l)])
+        assert v.shape == d_kl.shape
+        return d_kl
+
 def exponential(t, a, tau):
     return a * np.exp(-t / tau)
 
 def fit_tau(waveform, 
         pre_sample_length=1100, 
-        fit_length = 3800,
+        fit_length = 48000,
         show_plot=False,
         plot_save_name=None):
     '''
