@@ -101,3 +101,44 @@ def subtract_baseline(waveforms,
 
 
 
+def normalize_minmax(metric):
+    '''
+    Minmax normalize metric of interest
+
+    Minmax normalization computed manually
+
+    x' = (x - min(x)) / (max(x) - min(x))
+    
+    Parameters
+    ----------
+    metric: 1D array of num
+        metric of interest
+    
+    Returns
+    -------
+    scaled_metric: 1D array of num
+        minmax normalized metric of interest
+    '''
+    scaled_metric = (metric - metric.min()) / (metric.max() - metric.min())
+    return scaled_metric
+
+def normalize_standard(metric):
+    '''
+    Standard normalize metric of interest
+
+    Standard normalization computed manually
+
+    x' = (x - mean(x)) / std(x)
+    
+    Parameters
+    ----------
+    metric: 1D array of num
+        metric of interest
+    
+    Returns
+    -------
+    scaled_metric: 1D array of num
+        standard normalized metric of interest
+    '''
+    scaled_metric = (metric - metric.mean()) / metric.std()
+    return scaled_metric
