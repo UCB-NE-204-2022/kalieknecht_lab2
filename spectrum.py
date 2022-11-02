@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.signal import find_peaks, peak_prominences
+from scipy.stats import linregress
 from tools import normalize_minmax
 
 class spectrum():
@@ -101,12 +102,12 @@ class spectrum():
         # cut max range to desired quantile of data
         # this is done to remove high end of spectrum from bad filtered pulses
         # quantile value can be changed to 1 if bad filtering is fixed
-        self.counts, self.channels = np.histogram(self.trapezoid_heights, 
+        self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
             bins=self.bins, 
             range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
         
         # re-map channels to integers
-        self.channels = np.arange(0,len(self.channels))
+        self.channels = np.arange(0,len(self.bin_edges))
         
     def smooth_spectrum(self,
         window_length=5,
@@ -145,6 +146,7 @@ class spectrum():
         
     def find_gamma_peaks(self,
         prominence=60,
+        width=None,
         smoothed=False,
         smoothed_window_length=5,
         show_plot=False,
@@ -178,12 +180,12 @@ class spectrum():
         if smoothed:
             self.smooth_spectrum(window_length=smoothed_window_length)
             print('Finding Peaks')
-            self.peaks, self.prominences = find_peaks(self.smoothed_counts, prominence = prominence)
+            self.peaks, self.prominences = find_peaks(self.smoothed_counts, prominence=prominence, width=width)
         
         # find peaks on raw spectrum
         else:
             print('Finding Peaks')
-            self.peaks, self.prominences = find_peaks(self.counts, prominence = prominence)
+            self.peaks, self.prominences = find_peaks(self.counts, prominence = prominence, width = width)
         
         # show plot, if desired
         if show_plot:
@@ -226,10 +228,16 @@ class spectrum():
         # grab calibration channels for peaks
         self.calibration_channels = self.channels[1:][self.peaks]
         
-        # find linear fit
+        # perform linear regression
+        result = linregress(self.calibration_channels,self.energies)
+        
+        # store relevant fit values
+        self.slope = result.slope
+        self.intercept = result.intercept
+        self.pvalue = result.pvalue
         #TODO actually use a linear fit instead of grade school fitting 
-        self.slope = (energies[-1] - energies[0]) / (self.calibration_channels[-1] - self.calibration_channels[0])
-        self.intercept = energies[0] - self.calibration_channels[0] * self.slope
+        # self.slope = (energies[-1] - energies[0]) / (self.calibration_channels[-1] - self.calibration_channels[0])
+        # self.intercept = energies[0] - self.calibration_channels[0] * self.slope
         
         self.bin_energies = self.channels * self.slope + self.intercept
     
@@ -309,12 +317,13 @@ class spectrum():
             plot of Channel Energy in keV vs Channel
         '''
         plt.figure()
-        plt.scatter(self.calibration_channels,self.energies,label='Calibration Peaks',c='tab:orange')
+        plt.scatter(self.calibration_channels,self.energies,label='Calibration Peaks',c='tab:orange',s=10)
         plt.plot(self.channels,self.bin_energies,label='Linear Fit',c='tab:blue')
         plt.xlabel('Channel Number')
         plt.ylabel('Energy (keV)')
         if show_equation:
             plt.text(0,np.quantile(self.bin_energies,0.8),self.print_energy_calibration())
+            plt.text(0,np.quantile(self.bin_energies,0.7),f'p_value = {self.pvalue:.3e}')
         plt.legend(loc='lower right')
         plt.show()
         if plot_savefile is not None:
@@ -368,6 +377,12 @@ class spectrum():
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
+    
+    def get_pulser_noise(self,
+        pulser_trap_heights):
+        '''
+        Get FWHM of pulser'''
+        return 0
             
     def find_fano_factor(self,
         W=2.96*10**-3):
