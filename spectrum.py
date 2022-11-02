@@ -5,11 +5,12 @@ from scipy.signal import find_peaks, peak_prominences
 
 class spectrum():
     '''
-    Object to create spectrum
+    Object to create and hold spectrum
     '''
     def __init__(self,
         filtered_waveforms,
         bins=5000,
+        max_scaler=5,
         ):
         '''
         Initialize spectrum
@@ -20,10 +21,12 @@ class spectrum():
             array of filtered waveforms
         bins: int
             number of bins in spectrum
+        max_scaler: float
+            scaler value to max calibration histogram
         
         Returns
         --------
-        Spectrum: object
+        spectrum: object
             histogrammed counts
         
         '''
@@ -32,22 +35,33 @@ class spectrum():
         # find trapezoid heights
         self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms)
         
-        self.make_calibration_spectrum()
+        self.make_calibration_spectrum(max_scaler=max_scaler)
         
     def run_full_pipeline(self,
         energies,
+        smoothed=False,
         prominence=60):
         '''
-        Run full pipeline
+        Runs full pipeline of spectrum tools
+        
+        Finds gamma_peaks
+        
+        Parameters
+        ----------
+        
+        
+        Returns
+        -------
         '''
         # find gamma ray peaks and prominences
-        self.find_gamma_peaks(prominence=prominence)
+        self.find_gamma_peaks(prominence=prominence,smoothed=smoothed)
         
         # find energy calibration
         self.find_energy_calibration(energies)
         
         # find FWHMs
         self.find_energy_resolution()
+        print('Done!')
         print(self.fwhms)
         
     def make_calibration_spectrum(self,
@@ -62,7 +76,10 @@ class spectrum():
         
         Returns
         -------
-        
+        counts: ndarry
+            counts in each histogrammed bin
+        channels: ndarray
+            bin_edges of histogram
         '''
         self.counts, self.channels = np.histogram(self.trapezoid_heights, bins=self.bins, range=(self.trapezoid_heights.min(),self.trapezoid_heights.min()*max_scaler))
         
@@ -72,7 +89,7 @@ class spectrum():
         show_plot=False,
         plot_savefile=None):
         '''
-        Apply sagvol filter to smooth spectrum to smooth for peak fitting
+        Apply sagvol filter to smooth spectrum for peak fitting
         
         See scipy.signal.savgol_filter for more information
         
@@ -91,6 +108,7 @@ class spectrum():
         -------
         
         '''
+        print('Smoothing spectrum with Savgol filter')
         self.smoothed_counts = savgol_filter(self.counts, window_length, polyorder)
         if show_plot:
             plt.figure()
@@ -102,7 +120,7 @@ class spectrum():
         
     def find_gamma_peaks(self,
         prominence=60,
-        smoothed=True,
+        smoothed=False,
         smoothed_window_length=5,
         show_plot=False,
         plot_savefile=None):
@@ -116,7 +134,7 @@ class spectrum():
         prominence: float
             Required prominence of peaks
         smoothed: bool
-            Whether to use smoothed version of spectrum
+            Whether to use smoothed version of spectrum for peak finding
         show_plot: bool
             Whether to show plot of saved spectrum
         plot_savefile: str
@@ -130,12 +148,18 @@ class spectrum():
             Prominences for each peak in peaks
         
         '''
+        # find peaks on smoothed spectrum
         if smoothed:
             self.smooth_spectrum(window_length=smoothed_window_length)
+            print('Finding Peaks')
             self.peaks, self.prominences = find_peaks(self.smoothed_counts, prominence = prominence)
+        
+        # find peaks on raw spectrum
         else:
+            print('Finding Peaks')
             self.peaks, self.prominences = find_peaks(self.counts, prominence = prominence)
         
+        # show plot, if desired
         if show_plot:
             plt.figure()
             plt.plot(self.channels[1:], self.counts)
@@ -150,21 +174,35 @@ class spectrum():
         energies):
         '''
         Find linear energy calibration
+        #TODO rearrange so the peak fitting tolerance changes based on desired energy
         
         Parameters
         ----------
-        energies: np.array
+        energies: ndarray
             array of expected gamma ray energies (keV)
         
         Returns
         -------
-        energy_cal
+        calibration_channels: ndarray
+            array of channels associated with fitted peaks
+        bin_energies: ndarray
+            array of energies associated with calibration channels
         '''
+        print('Finding energy calibration')
+        # store energies to class
         self.energies = energies
+        
+        # check that number of energies matches number of peaks
         assert len(self.peaks) == len(self.energies), "Number of peaks ("+str(len(self.peaks))+") and energies ("+str(len(self.energies))+") do not match. Change prominence."
+        
+        # grab calibration channels for peaks
         self.calibration_channels = self.channels[1:][self.peaks]
+        
+        # find linear fit
+        #TODO actually use a linear fit instead of grade school fitting 
         self.slope = (energies[-1] - energies[0]) / (self.calibration_channels[-1] - self.calibration_channels[0])
         self.intercept = energies[0] - self.calibration_channels[0] * self.slope
+        
         self.bin_energies = self.channels * self.slope + self.intercept
         
     def plot_energy_calibrated_spectrum(self,
@@ -186,6 +224,7 @@ class spectrum():
         Returns
         -------
         plot: matplotlib.pyplot.figure
+            plot of spectrum with energy in keV on x-axis
         '''
         plt.figure()
         plt.plot(self.bin_energies[1:], self.counts)
@@ -212,6 +251,7 @@ class spectrum():
         Return
         ------
         plot: matplotlib.pyplot.figure
+            plot of Channel Energy in keV vs Channel
         '''
         plt.figure()
         plt.scatter(self.calibration_channels,self.energies,label='Calibration Peaks')
@@ -231,9 +271,10 @@ class spectrum():
         
         Returns
         -------
-        fwhm: np.array
-            fwhm of peaks in keV
+        fwhms: ndarray
+            fwhm of fitted peaks in keV
         '''
+        print('Finding energy calibration')
         self.fwhms = np.zeros(len(self.peaks))
         i=0
         for peak in self.peaks:
@@ -252,6 +293,8 @@ class spectrum():
         
         Parameters
         ----------
+        plot_savefile: str
+            plot savefile name, not saved if left empty
         
         Returns
         -------
@@ -281,7 +324,7 @@ def find_trapezoid_heights(filtered_waveforms):
     Returns
     -------
     trapezoidal_heights: np.array
-        1d array of trapezoid height for each waveform
+        1D array of trapezoid height for each waveform
     '''
     return filtered_waveforms.max(axis=1)
 
