@@ -3,8 +3,13 @@ from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
 class JordanovFilter():
-    # We use the notation used in
-    #V.T. Jordanoo, G.F. Knoll/Nucl. Instr. and Meth . in Phys. Res. A 345 (1994) 337-345
+    '''
+    We use the notation used in
+    V.T. Jordanoo, G.F. Knoll/Nucl. Instr. and Meth . in Phys. Res. A 345 (1994) 337-345
+    
+    Code by Jaewon
+    
+    '''
     def __init__(self, 
         peaking_time, 
         gap_time, 
@@ -95,6 +100,8 @@ class BogovacFilter():
     Nuclear Instruments and Methods in Physics Research Section B:
     Beam Interactions with Materials and Atoms, vol. 267, no. 12, 
     pp. 2073{2076, Jun. 2009, doi: 10.1016/j.nimb.2009.03.033.
+    
+    Code by Jaewon
     '''
     def __init__(self, peaking_time, gap_time, decay_time):
         self.peaking_time = peaking_time
@@ -133,7 +140,9 @@ class BogovacFilter():
         return d_kl
 class CooperFilter():
     '''
-    # From Ren Cooper's document and also the online blog post https://nukephysik101.wordpress.
+    From Ren Cooper's document and also the online blog post https://nukephysik101.wordpress.
+    
+    Code by Jaewon.
     '''
     def __init__(self, peaking_time, gap_time, decay_time):
         self.peaking_time = peaking_time
