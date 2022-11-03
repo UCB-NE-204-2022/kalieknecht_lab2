@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.signal import find_peaks, peak_prominences
 from scipy.stats import linregress
+from scipy.optimize import curve_fit
 from tools import normalize_minmax
 
 class spectrum():
@@ -48,10 +49,16 @@ class spectrum():
         '''
         Runs full pipeline of spectrum tools
         
-        Finds gamma_peaks
+        Finds gamma_peaks, energy calibration, and energy resolution.
         
         Parameters
         ----------
+        energies: ndarray
+            list of expected peak energies
+        smoothed: bool
+            whether to perform peak finding on smoothed spectrum
+        prominence: float
+            prominence for peak fitting
         
         
         Returns
@@ -106,8 +113,9 @@ class spectrum():
             bins=self.bins, 
             range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
         
+        self.bin_centers = np.diff(self.bin_edges)
         # re-map channels to integers
-        self.channels = np.arange(0,len(self.bin_edges))
+        self.channels = np.arange(0,len(self.bin_centers))
         
     def smooth_spectrum(self,
         window_length=5,
@@ -138,8 +146,8 @@ class spectrum():
         self.smoothed_counts = savgol_filter(self.counts, window_length, polyorder)
         if show_plot:
             plt.figure()
-            plt.plot(self.channels[1:], self.counts,label='Spectrum')
-            plt.plot(self.channels[1:], self.smoothed_counts,label='Savgol Smoothed Spectrum')
+            plt.plot(self.channels, self.counts,label='Spectrum')
+            plt.plot(self.channels, self.smoothed_counts,label='Savgol Smoothed Spectrum')
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
@@ -190,8 +198,8 @@ class spectrum():
         # show plot, if desired
         if show_plot:
             plt.figure()
-            plt.plot(self.channels[1:], self.counts)
-            plt.plot(self.channels[1:][self.peaks], self.counts[self.peaks], 'x', markersize = 5)
+            plt.plot(self.channels, self.counts)
+            plt.plot(self.channels[self.peaks], self.counts[self.peaks], 'x', markersize = 5)
             plt.xlabel('Channel Number')
             plt.ylabel('Counts')
             if semilogy:
@@ -201,7 +209,8 @@ class spectrum():
                 plt.savefig(plot_savefile)
                 
     def find_energy_calibration(self,
-        energies):
+        energies,
+        alternative='two-sided'):
         '''
         Find linear energy calibration
         #TODO rearrange so the peak fitting tolerance changes based on desired energy
@@ -210,6 +219,14 @@ class spectrum():
         ----------
         energies: ndarray
             array of expected gamma ray energies (keV)
+        alternative : {'two-sided', 'less', 'greater'}, optional
+            Defines the alternative hypothesis. Default is 'two-sided'.
+            The following options are available:
+
+            * 'two-sided': the slope of the regression line is nonzero
+            * 'less': the slope of the regression line is less than zero
+            * 'greater':  the slope of the regression line is greater than zero
+            See scipy.stats.linregress for more infof
         
         Returns
         -------
@@ -226,15 +243,18 @@ class spectrum():
         assert len(self.peaks) == len(self.energies), "Number of peaks ("+str(len(self.peaks))+") and energies ("+str(len(self.energies))+") do not match. Change prominence."
         
         # grab calibration channels for peaks
-        self.calibration_channels = self.channels[1:][self.peaks]
+        self.calibration_channels = self.channels[self.peaks]
         
         # perform linear regression
-        result = linregress(self.calibration_channels,self.energies)
+        result = linregress(self.calibration_channels,self.energies,alternative=alternative)
         
         # store relevant fit values
         self.slope = result.slope
         self.intercept = result.intercept
         self.pvalue = result.pvalue
+        self.rvalue = result.rvalue
+        self.stderr = result.stderr
+        self.intercept_stderr = result.stderr
         #TODO actually use a linear fit instead of grade school fitting 
         # self.slope = (energies[-1] - energies[0]) / (self.calibration_channels[-1] - self.calibration_channels[0])
         # self.intercept = energies[0] - self.calibration_channels[0] * self.slope
@@ -281,19 +301,19 @@ class spectrum():
         plt.figure()
         # Plot energy spectrum if desired
         if energy:
-            plt.plot(self.bin_energies[1:], self.counts)
+            plt.plot(self.bin_energies, self.counts)
             plt.xlabel('Energy (keV)')
         # Otherwise plot counts vs channels
         else:
-            plt.plot(self.channels[1:],self.counts)
+            plt.plot(self.channels,self.counts)
             plt.xlabel('Channel')
         
         plt.ylabel('Counts')
         if show_calibrated_peaks:
             if energy:
-                plt.plot(self.bin_energies[1:][self.peaks], self.counts[self.peaks], 'x', markersize = 5)
+                plt.plot(self.bin_energies[self.peaks], self.counts[self.peaks], 'x', markersize = 5)
             else:
-                plt.plot(self.channels[1:][self.peaks], self.counts[self.peaks], 'x', markersize = 5)
+                plt.plot(self.channels[self.peaks], self.counts[self.peaks], 'x', markersize = 5)
         if semilogy:
             plt.semilogy()
         plt.show()
@@ -329,12 +349,21 @@ class spectrum():
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
     
-    def find_energy_resolution(self):
+    def find_energy_resolution(self,
+        E_window=20,
+        show_plot=False,
+        plot_savefile=None):
         '''
         Find Energy resolution of peaks
         
         Parameters
         ----------
+        E_window: float
+            Energy window half_width in keV for gaus fitting
+        show_plot: bool
+            whether to show plot of fitted gaussians
+        plot_savefile: str
+            plot savefile name, not saved if left empty
         
         Returns
         -------
@@ -342,16 +371,32 @@ class spectrum():
             fwhm of fitted peaks in keV
         '''
         print('Finding energy resolution calibration')
+        # initialize array to store fwhms
         self.fwhms = np.zeros(len(self.peaks))
-        i=0
-        for peak in self.peaks:
-            fwhm_high = next(idx for idx, val in zip(self.channels[peak:], self.counts[peak:]) if val <= 0.5 * self.counts[peak])
-            
-            fwhm_low = next(idx for idx, val in zip(reversed(self.channels[:peak]), reversed(self.counts[:peak])) if val <= 0.5 * self.counts[peak])
-            
-            fwhm = (fwhm_high * self.slope + self.intercept) - (fwhm_low * self.slope + self.intercept)
-            self.fwhms[i] = fwhm
-            i=i+1
+        if show_plot:
+            plt.figure()
+        for i in range(len(self.peaks)):
+            # grab centroid value
+            centroid = self.peaks[i]
+            # grab ROIs
+            roi_x = self.bin_energies[centroid-E_window : centroid + E_window]
+            roi_y = self.counts[centroid - E_window : centroid + E_window]
+            # curve fit with scipy.optimize
+            popt_gaussian, pcov_gaussian = curve_fit(gaussian,
+                roi_x,
+                roi_y,
+                [self.counts[centroid],self.bin_energies[centroid],np.sqrt(self.counts[centroid])])
+            # save fitted FWHM
+            self.fwhms[i] = abs(popt_gaus[2]*2.355)
+            # optinal plotting
+            if show_plot:
+                plt.plot(roi_x,roi_y)
+                plt.plot(roi_x, gaussian(roi_x, *popt_gaus), color='r',ls='--')
+        if show_plot:
+            plt.show()
+            if plot_savefile is not None:
+                plt.savefig(plot_savefile)
+        
     
     def plot_energy_resolution(self,
         plot_savefile=None):
@@ -482,7 +527,7 @@ def plot_trapezoid_height_histogram(trapezoid_heights,
         plt.savefig(save_name)
     return
 
-def gaus(x, A, x0, sigma):
+def gaussian(x, A, x0, sigma):
     '''
     Definition of gaussian for use in FWHM/peak fitting
     '''
