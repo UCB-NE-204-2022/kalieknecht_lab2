@@ -12,8 +12,9 @@ class spectrum():
     '''
     def __init__(self,
         filtered_waveforms,
-        bins=5000,
-        quantile=0.9905,
+        trap_heights=None,
+        bins=2000,
+        quantile=0.9905
         ):
         '''
         Initialize spectrum
@@ -27,6 +28,13 @@ class spectrum():
         quantile: float
             quantile of trapezoidal data which will be included in spectrum
             See self.make_calibration_spectrum for more info
+        bin_max: float
+            max bin range. if set to none, quantile is used
+            Used for consisting plotting between spectra
+        calibration: list
+            [slope, y-intercept] of previous energy calibration
+            must use same binning as calibration
+
         
         Returns
         --------
@@ -37,15 +45,44 @@ class spectrum():
         #TODO change input to raw waveforms and call trapezoidal filter from here
         self.bins = bins
         
-        # find trapezoid heights
-        self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms)
+        # find trapezoid heights if not provided
+        if trap_heights is None:
+            self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms)
+        else:
+            self.trapezoid_heights = trap_heights
         
         self.make_calibration_spectrum(quantile=quantile)
+        
+    def add_additional_data(self,
+        additional_waveforms):
+        '''
+        Add additional waveforms to spectrum
+        
+        Just used to find fwhm from pulser
+        
+        Paramters
+        ---------
+        additional_waveforms: ndarray
+            array of additional waveforms to add
+            
+        '''
+        new_trap_heights = find_trapezoid_heights(additional_waveforms)
+        all_trap_heights = np.append(new_trap_heights,self.trapezoid_heights)
+        
+        self.counts_new, self.bin_edges_new = np.histogram(all_trap_heights, 
+                bins=self.bins, 
+                range=(self.bin_edges[0],self.bin_edges[1]))
+        self.bin_centers_new = np.diff(self.bin_edges_new)
+        self.channels_new = np.arange(len(self.bin_centers_new))
+        
         
     def run_full_pipeline(self,
         energies,
         smoothed=False,
-        prominence=60):
+        prominence=100,
+        width=[0,5],
+        alternative='greater',
+        E_res_window=7):
         '''
         Runs full pipeline of spectrum tools
         
@@ -65,21 +102,22 @@ class spectrum():
         -------
         '''
         # find gamma ray peaks and prominences
-        self.find_gamma_peaks(prominence=prominence,smoothed=smoothed)
+        self.find_gamma_peaks(prominence=prominence,smoothed=smoothed,width=width)
         
+
         # ony perform energy calibration if more than one peak present
         if len(self.peaks) > 1:
             # find energy calibration
-            self.find_energy_calibration(energies)
+            self.find_energy_calibration(energies,alternative=alternative)
         
         # find FWHMs
-        self.find_energy_resolution()
+        self.find_energy_resolution(E_window=E_res_window)
         
         # find Fano Factor
         #self.find_fano_factor()
         
         print('Done!')
-        print(self.fwhms)
+        print('fwhms:',self.fwhms)
         
     def make_calibration_spectrum(self,
         quantile=0.9905):
@@ -92,6 +130,9 @@ class spectrum():
             quantile of trapezoidal data which will be included in spectrum,
             which must be between 0 and 1 inclusive. Default value works for lab 1 data
             See np.quantile for more information
+        bin_max: float
+            max bin range. if set to none, quantile is used
+            Used for consisting plotting between spectra
         
         Returns
         -------
@@ -112,7 +153,10 @@ class spectrum():
         self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
             bins=self.bins, 
             range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
-        
+        # else:
+        #     self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
+        #         bins=self.bins, 
+        #         range=(bin_limits))
         self.bin_centers = np.diff(self.bin_edges)
         # re-map channels to integers
         self.channels = np.arange(0,len(self.bin_centers))
@@ -153,8 +197,8 @@ class spectrum():
                 plt.savefig(plot_savefile)
         
     def find_gamma_peaks(self,
-        prominence=60,
-        width=None,
+        prominence=100,
+        width=[0,5],
         smoothed=False,
         smoothed_window_length=5,
         show_plot=False,
@@ -198,12 +242,13 @@ class spectrum():
         # show plot, if desired
         if show_plot:
             plt.figure()
-            plt.plot(self.channels, self.counts)
-            plt.plot(self.channels[self.peaks], self.counts[self.peaks], 'x', markersize = 5)
+            plt.plot(self.channels, self.counts,label='Spectrum Data')
+            plt.plot(self.channels[self.peaks], self.counts[self.peaks], 'x', markersize = 5, label='Found Peaks')
             plt.xlabel('Channel Number')
             plt.ylabel('Counts')
             if semilogy:
                 plt.semilogy()
+            plt.legend()
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
@@ -349,9 +394,11 @@ class spectrum():
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
     
-    def find_energy_resolution(self,
-        E_window=20,
+    def find_fwhm(self,
+        E_window=10,
         show_plot=False,
+        show_fwhms=False,
+        semilogy=False,
         plot_savefile=None):
         '''
         Find Energy resolution of peaks
@@ -373,6 +420,7 @@ class spectrum():
         print('Finding energy resolution calibration')
         # initialize array to store fwhms
         self.fwhms = np.zeros(len(self.peaks))
+        self.peak_counts = np.zeros(len(self.peaks))
         if show_plot:
             plt.figure()
         for i in range(len(self.peaks)):
@@ -387,18 +435,40 @@ class spectrum():
                 roi_y,
                 [self.counts[centroid],self.bin_energies[centroid],np.sqrt(self.counts[centroid])])
             # save fitted FWHM
-            self.fwhms[i] = abs(popt_gaus[2]*2.355)
+            self.fwhms[i] = abs(popt_gaussian[2]*2.355)
+            
+            self.peak_counts[i] = roi_y.sum()
             # optinal plotting
             if show_plot:
                 plt.plot(roi_x,roi_y)
-                plt.plot(roi_x, gaussian(roi_x, *popt_gaus), color='r',ls='--')
+                plt.plot(roi_x, gaussian(roi_x, *popt_gaussian), color='r',ls='--')
+                if show_fwhms:
+                    plt.text(roi_x.mean()-10,roi_y.max()+10,str(round(self.fwhms[i],2)))
         if show_plot:
+            plt.xlabel('Energy (keV)')
+            plt.ylabel('Counts')
+            if semilogy:
+                plt.semilogy()
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
+                
+    def find_energy_resolution(self):
+        '''
+        Find energy resolution
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        '''
+        self.find_fwhm()
+        self.energy_resolution = self.fwhms / self.energies
+
         
     
-    def plot_energy_resolution(self,
+    def plot_fwhms(self,
         plot_savefile=None):
         '''
         Plot energy resolution of fitted peaks
@@ -416,12 +486,29 @@ class spectrum():
         plt.figure()
         plt.plot(self.energies,self.fwhms)
         plt.scatter(self.energies,self.fwhms)
-        plt.title('Energy Resolution')
+        plt.title('FWHMs of Fitted Gamma-Ray Peaks')
         plt.ylabel('FWHM (keV)')
         plt.xlabel('Energy (keV)')
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
+    
+    def plot_energy_resolution(self,
+        plot_savefile=None):
+        '''
+        Plot energy resolution of fitted peaks
+        
+        '''
+        plt.figure()
+        plt.plot(self.energies,self.energy_resolution*100)
+        plt.scatter(self.energies,self.energy_resolution*100)
+        plt.title('Energy Resolution')
+        plt.ylabel('Energy Resolution (%)')
+        plt.xlabel('Energy (keV)')
+        plt.show()
+        if plot_savefile is not None:
+            plt.savefig(plot_savefile)
+        
     
     def get_pulser_noise(self,
         pulser_trap_heights):
@@ -430,7 +517,8 @@ class spectrum():
         return 0
             
     def find_fano_factor(self,
-        W=2.96*10**-3):
+        W=2.96*10**-3,
+        E_noise=3.2574542559794555):
         '''
         Find fano factor of peaks
         
@@ -451,6 +539,8 @@ class spectrum():
         W: float
             energy to generate electron hole pair in detector medium (in keV)
             2.96 eV used for Ge
+        E_noise: float
+            fwhm of noise as found from pulser. default is value i found 10/28
         
         Returns
         -------
@@ -458,8 +548,36 @@ class spectrum():
             fano factor of peaks
         '''
         print('Finding Fano Factor')
+        # E_noise=9.628062296356013
 
         self.fano_factor = (self.fwhms ** 2 - E_noise ** 2) / (2.355**2 * self.energies * W)
+    
+    def plot_fano_factor(self,
+        display_mean_fano=False,
+        plot_savefile=None):
+        '''
+        Plot fano factor vs energy
+        
+        Parameters
+        ----------
+        plot_savefile: str
+            saves plot at var name if not empty
+        
+        
+        Returns
+        -------
+        figure: matplotlib.pyplot.figure
+        '''
+        plt.figure()
+        plt.plot(self.energies,self.fano_factor,marker='o')
+        plt.xlabel('Energy (keV)')
+        plt.ylabel('Fano Factor')
+        if display_mean_fano:
+            plt.text(np.quantile(self.energies,0.3),np.quantile(self.fano_factor,0.9),'Mean Fano Factor = '+str(round(self.fano_factor.mean(),2))+' +/- '+str(round(self.fano_factor.std(),2)))
+        plt.show()
+        if plot_savefile is not None:
+            plt.savefig(plot_savefile)
+
         
             
     def find_efficiency_calibration(self,
