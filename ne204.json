@@ -78,21 +78,21 @@
     },
     "Trigger/Save Settings": {
         "CFD Enable": 0,
-        "Gap Time": 10,
-        "High Energy Threshold": 1500,
-        "Peaking Time": 10,
-        "Pile Up": 50,
+        "Gap Time": 50,
+        "High Energy Threshold": 10000,
+        "Peaking Time": 50,
+        "Pile Up": 0,
         "Pre-Trigger Delay": 1000,
         "Pre-Trigger P+G Bit": 0,
         "Re-Pile Up": null,
-        "Sample Length": 5000,
+        "Sample Length": 50000,
         "Sample Start Index": 0,
         "Sum Trigger CFD Enable": 0,
         "Sum Trigger Gap Time": 0,
         "Sum Trigger High Energy Threshold": 0,
         "Sum Trigger Peaking Time": 0,
         "Sum Trigger Threshold Value": 0,
-        "Trigger Gate Window": 300,
-        "Trigger Threshold Value": 300
+        "Trigger Gate Window": 100,
+        "Trigger Threshold Value": 5000
     }
 }
