@@ -104,6 +104,11 @@ class spectrum():
         # find gamma ray peaks and prominences
         self.find_gamma_peaks(prominence=prominence,smoothed=smoothed,width=width)
         
+        # apply gaussian fit to found peaks
+        self.fit_gaussian()
+        
+        
+        
 
         # ony perform energy calibration if more than one peak present
         if len(self.peaks) > 1:
@@ -192,6 +197,7 @@ class spectrum():
             plt.figure()
             plt.plot(self.channels, self.counts,label='Spectrum')
             plt.plot(self.channels, self.smoothed_counts,label='Savgol Smoothed Spectrum')
+            plt.tight_layout()
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
@@ -249,6 +255,60 @@ class spectrum():
             if semilogy:
                 plt.semilogy()
             plt.legend()
+            plt.tight_layout()
+            plt.show()
+            if plot_savefile is not None:
+                plt.savefig(plot_savefile)
+                
+    def fit_gaussian(self,
+        E_window=10,
+        show_plot=False,
+        show_fitvalues=False,
+        plot_savefile=None):
+        '''
+        Fit gaussian to peaks while in channel format. 
+        
+        '''
+        self.E_window = E_window
+        print('Fitting gaussian')
+        # initialize array to store gaussian fits
+        self.amplitude = np.zeros(len(self.peaks)) # amplitude at peak center
+        self.x0 = np.zeros(len(self.peaks)) # peak center
+        self.sigmas = np.zeros(len(self.peaks)) # standard deviation
+        self.peak_counts = np.zeros(len(self.peaks)) # number of counts in ROI
+        if show_plot:
+            plt.figure()
+        for i in range(len(self.peaks)):
+            # grab centroid value
+            centroid = self.peaks[i]
+            
+            # grab ROIs in x and y
+            roi_x = self.channels[centroid-E_window : centroid + E_window]
+            roi_y = self.counts[centroid - E_window : centroid + E_window]
+            
+            # curve fit with scipy.optimize
+            popt_gaussian, pcov_gaussian = curve_fit(gaussian,
+                roi_x,
+                roi_y,
+                [self.counts[centroid],self.channels[centroid],np.sqrt(self.counts[centroid])])
+            
+            if show_plot:
+                plt.plot(roi_x,roi_y)
+                plt.plot(roi_x,gaussian(roi_x,*popt_gaussian))
+                if show_fitvalues:
+                    plt.text(roi_x.mean(),roi_y.max()+110,'A='+str(round(popt_gaussian[0],2)),fontsize=7)
+                    plt.text(roi_x.mean(),roi_y.max()+60,'x0='+str(round(popt_gaussian[1],2)),fontsize=7)
+                    plt.text(roi_x.mean(),roi_y.max()+10,'sigma='+str(round(abs(popt_gaussian[2]),2)),fontsize=7)
+            
+            # save fitted values
+            self.amplitude[i] = popt_gaussian[0]
+            self.x0[i] = popt_gaussian[1]
+            self.sigmas[i] = abs(popt_gaussian[2])
+            self.peak_counts[i] = roi_y.sum()
+        if show_plot:
+            plt.ylim(-50,self.amplitude.max()+150)
+            plt.xlim(self.x0.min()-50,self.x0.max()+200)
+            plt.tight_layout()
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
@@ -287,11 +347,8 @@ class spectrum():
         # check that number of energies matches number of peaks
         assert len(self.peaks) == len(self.energies), "Number of peaks ("+str(len(self.peaks))+") and energies ("+str(len(self.energies))+") do not match. Change prominence."
         
-        # grab calibration channels for peaks
-        self.calibration_channels = self.channels[self.peaks]
-        
         # perform linear regression
-        result = linregress(self.calibration_channels,self.energies,alternative=alternative)
+        result = linregress(self.x0,self.energies,alternative=alternative)
         
         # store relevant fit values
         self.slope = result.slope
@@ -300,11 +357,28 @@ class spectrum():
         self.rvalue = result.rvalue
         self.stderr = result.stderr
         self.intercept_stderr = result.stderr
-        #TODO actually use a linear fit instead of grade school fitting 
-        # self.slope = (energies[-1] - energies[0]) / (self.calibration_channels[-1] - self.calibration_channels[0])
-        # self.intercept = energies[0] - self.calibration_channels[0] * self.slope
         
-        self.bin_energies = self.channels * self.slope + self.intercept
+        # convert channels to energies
+        self.bin_energies = self.perform_energy_calibration(self.channels)
+        self.sigma_E = self.sigmas*self.slope
+        
+    def perform_energy_calibration(self,
+        channels):
+        '''
+        Perform energy calibration on provided channels
+        
+        Parameters
+        ----------
+        channels: ndarray
+            converts provided channels to energy
+        
+        Returns
+        -------
+        energies: ndarray
+            energies in keV
+        '''
+        return channels * self.slope + self.intercept
+        
     
     def print_energy_calibration(self):
         '''
@@ -361,6 +435,7 @@ class spectrum():
                 plt.plot(self.channels[self.peaks], self.counts[self.peaks], 'x', markersize = 5)
         if semilogy:
             plt.semilogy()
+        plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
@@ -382,7 +457,9 @@ class spectrum():
             plot of Channel Energy in keV vs Channel
         '''
         plt.figure()
-        plt.scatter(self.calibration_channels,self.energies,label='Calibration Peaks',c='tab:orange',s=10)
+        plt.scatter(self.x0,self.energies,label='Calibration Peaks',c='tab:orange',s=10)
+        plt.errorbar(self.x0,self.energies,yerr=self.sigma_E,xerr=self.sigmas,c='tab:orange',fmt='none')
+        
         plt.plot(self.channels,self.bin_energies,label='Linear Fit',c='tab:blue')
         plt.xlabel('Channel Number')
         plt.ylabel('Energy (keV)')
@@ -390,18 +467,18 @@ class spectrum():
             plt.text(0,np.quantile(self.bin_energies,0.8),self.print_energy_calibration())
             plt.text(0,np.quantile(self.bin_energies,0.7),f'p_value = {self.pvalue:.3e}')
         plt.legend(loc='lower right')
+        plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
     
     def find_fwhm(self,
-        E_window=10,
         show_plot=False,
         show_fwhms=False,
         semilogy=False,
         plot_savefile=None):
         '''
-        Find Energy resolution of peaks
+        Find FWHM of peaks
         
         Parameters
         ----------
@@ -417,38 +494,26 @@ class spectrum():
         fwhms: ndarray
             fwhm of fitted peaks in keV
         '''
-        print('Finding energy resolution calibration')
-        # initialize array to store fwhms
-        self.fwhms = np.zeros(len(self.peaks))
-        self.peak_counts = np.zeros(len(self.peaks))
+        # Calculate fwhms
+        self.fwhms = abs(self.sigma_E**2.355)
+        
+        # Plot fit and FWHM values if desired
         if show_plot:
             plt.figure()
-        for i in range(len(self.peaks)):
-            # grab centroid value
-            centroid = self.peaks[i]
-            # grab ROIs
-            roi_x = self.bin_energies[centroid-E_window : centroid + E_window]
-            roi_y = self.counts[centroid - E_window : centroid + E_window]
-            # curve fit with scipy.optimize
-            popt_gaussian, pcov_gaussian = curve_fit(gaussian,
-                roi_x,
-                roi_y,
-                [self.counts[centroid],self.bin_energies[centroid],np.sqrt(self.counts[centroid])])
-            # save fitted FWHM
-            self.fwhms[i] = abs(popt_gaussian[2]*2.355)
-            
-            self.peak_counts[i] = roi_y.sum()
-            # optinal plotting
-            if show_plot:
+            for i in range(len(self.fwhms)):
+                centroid = self.peaks[i]
+                roi_x = self.bin_energies[centroid-self.E_window : centroid + self.E_window]
+                roi_y = self.counts[centroid - self.E_window : centroid + self.E_window]
                 plt.plot(roi_x,roi_y)
-                plt.plot(roi_x, gaussian(roi_x, *popt_gaussian), color='r',ls='--')
+                #TODO use energy calibration function
+                plt.plot(roi_x, gaussian(roi_x, self.amplitude[i], self.x0[i]*self.slope+self.intercept, self.sigma_E[i]), color='r',ls='--')
                 if show_fwhms:
-                    plt.text(roi_x.mean()-10,roi_y.max()+10,str(round(self.fwhms[i],2)))
-        if show_plot:
+                    plt.text(roi_x.max()+10,roi_y.mean(),'FWHM = '+str(round(self.fwhms[i],2))+' keV',rotation='vertical')
             plt.xlabel('Energy (keV)')
             plt.ylabel('Counts')
             if semilogy:
                 plt.semilogy()
+            plt.tight_layout()
             plt.show()
             if plot_savefile is not None:
                 plt.savefig(plot_savefile)
@@ -463,10 +528,13 @@ class spectrum():
         Returns
         -------
         '''
-        self.find_fwhm()
-        self.energy_resolution = self.fwhms / self.energies
-
+        # find FWHM if not already found
+        if self.fwhms is None:
+            self.find_fwhm()
         
+        # calculate energy resolution
+        # FWHM / Peak energy
+        self.energy_resolution = self.fwhms / self.energies
     
     def plot_fwhms(self,
         plot_savefile=None):
@@ -486,9 +554,10 @@ class spectrum():
         plt.figure()
         plt.plot(self.energies,self.fwhms)
         plt.scatter(self.energies,self.fwhms)
-        plt.title('FWHMs of Fitted Gamma-Ray Peaks')
+        #plt.title('FWHMs of Fitted Gamma-Ray Peaks')
         plt.ylabel('FWHM (keV)')
         plt.xlabel('Energy (keV)')
+        plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
@@ -502,9 +571,10 @@ class spectrum():
         plt.figure()
         plt.plot(self.energies,self.energy_resolution*100)
         plt.scatter(self.energies,self.energy_resolution*100)
-        plt.title('Energy Resolution')
+        #plt.title('Energy Resolution')
         plt.ylabel('Energy Resolution (%)')
         plt.xlabel('Energy (keV)')
+        plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
@@ -518,7 +588,7 @@ class spectrum():
             
     def find_fano_factor(self,
         W=2.96*10**-3,
-        E_noise=3.2574542559794555):
+        E_noise=2.7187219507156715):
         '''
         Find fano factor of peaks
         
@@ -574,6 +644,7 @@ class spectrum():
         plt.ylabel('Fano Factor')
         if display_mean_fano:
             plt.text(np.quantile(self.energies,0.3),np.quantile(self.fano_factor,0.9),'Mean Fano Factor = '+str(round(self.fano_factor.mean(),2))+' +/- '+str(round(self.fano_factor.std(),2)))
+        plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
@@ -640,6 +711,7 @@ def plot_trapezoid_height_histogram(trapezoid_heights,
     plt.xlim(xlims)
     if semilogy:
         plt.semilogy()
+    plt.tight_layout()
     plt.show()
     if save_name is not None:
         plt.savefig(save_name)
