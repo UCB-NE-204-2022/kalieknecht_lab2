@@ -233,6 +233,7 @@ def fit_tau(waveform,
     x = np.arange(0, fit_length)
     x_norm = (x - x[0]) / (x[-1] - x[0])
     
+    wave_times = np.linspace(0,1/(250*10**6)*len(waveform)*10**9,len(waveform))
     # initial guesses for values
     tau_0 = 10000/fit_length
     a_0 = decay_waveform[0]
@@ -244,7 +245,7 @@ def fit_tau(waveform,
         fit_vals = exponential(x_norm, a, tau_norm)
         plt.plot(waveform,label='Raw Waveform')
         plt.plot(x+pre_sample_length, fit_vals,label='Exponential Fit')
-        plt.xlabel('Time (Clock Cycles)')
+        plt.xlabel('Measurement Time (ns)')
         plt.ylabel('Magnitude (ADC Units)')
         plt.text(3800,25,r'$\tau$='+str(round(tau,2)))
         plt.legend()
