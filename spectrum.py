@@ -34,7 +34,6 @@ class spectrum():
         calibration: list
             [slope, y-intercept] of previous energy calibration
             must use same binning as calibration
-
         
         Returns
         --------
@@ -75,7 +74,6 @@ class spectrum():
         self.bin_centers_new = np.diff(self.bin_edges_new)
         self.channels_new = np.arange(len(self.bin_centers_new))
         
-        
     def run_full_pipeline(self,
         energies,
         smoothed=False,
@@ -106,9 +104,6 @@ class spectrum():
         
         # apply gaussian fit to found peaks
         self.fit_gaussian()
-        
-        
-        
 
         # ony perform energy calibration if more than one peak present
         if len(self.peaks) > 1:
@@ -145,12 +140,7 @@ class spectrum():
             counts in each histogrammed bin
         channels: ndarray
             bin_edges of histogram
-        '''
-        # Old implementation - felt a little too hacky
-        # self.counts, self.channels = np.histogram(self.trapezoid_heights, 
-        #     bins=self.bins, 
-        #     range=(self.trapezoid_heights.min(),self.trapezoid_heights.min()*max_scaler))
-        
+        '''       
         # make histogram of data from trapezoidal heights
         # cut max range to desired quantile of data
         # this is done to remove high end of spectrum from bad filtered pulses
@@ -158,10 +148,7 @@ class spectrum():
         self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
             bins=self.bins, 
             range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
-        # else:
-        #     self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
-        #         bins=self.bins, 
-        #         range=(bin_limits))
+        # find bin centers
         self.bin_centers = np.diff(self.bin_edges)
         # re-map channels to integers
         self.channels = np.arange(0,len(self.bin_centers))
@@ -173,6 +160,8 @@ class spectrum():
         plot_savefile=None):
         '''
         Apply sagvol filter to smooth spectrum for peak fitting
+        
+        Not currently used
         
         See scipy.signal.savgol_filter for more information
         
@@ -189,6 +178,8 @@ class spectrum():
         
         Returns
         -------
+        smoothed_counts: ndarray
+            savgol filtered counts
         
         '''
         print('Smoothing spectrum with Savgol filter')
@@ -379,7 +370,6 @@ class spectrum():
         '''
         return channels * self.slope + self.intercept
         
-    
     def print_energy_calibration(self):
         '''
         Print lineaer energy calibration fit
@@ -539,7 +529,7 @@ class spectrum():
     def plot_fwhms(self,
         plot_savefile=None):
         '''
-        Plot energy resolution of fitted peaks
+        Plot FWHM of fitted peaks
         
         Parameters
         ----------
@@ -552,8 +542,9 @@ class spectrum():
         
         '''
         plt.figure()
-        plt.plot(self.energies,self.fwhms)
-        plt.scatter(self.energies,self.fwhms)
+        plt.plot(self.energies,self.fwhms,c='tab:blue')
+        plt.scatter(self.energies,self.fwhms,c='tab:orange')
+        plt.errorbar(self.energies,self.fwhms,yerr=self.sigma_E,xerr=self.sigma_E,c='tab:orange',fmt='none')
         #plt.title('FWHMs of Fitted Gamma-Ray Peaks')
         plt.ylabel('FWHM (keV)')
         plt.xlabel('Energy (keV)')
@@ -567,10 +558,20 @@ class spectrum():
         '''
         Plot energy resolution of fitted peaks
         
+        Parameters
+        ----------
+        plot_savefile: str
+            plot savefile name, not saved if left empty
+        
+        Returns
+        -------
+        plt: matplotlib.pyplot.figure
+        
         '''
         plt.figure()
-        plt.plot(self.energies,self.energy_resolution*100)
-        plt.scatter(self.energies,self.energy_resolution*100)
+        plt.plot(self.energies,self.energy_resolution*100,c='tab:blue')
+        plt.scatter(self.energies,self.energy_resolution*100,c='tab:orange')
+        plt.errorbar(self.energies,self.energy_resolution*100,yerr=np.sqrt((self.sigma_E/self.fwhms)**2+(self.sigma_E/self.energies)**2),xerr=self.sigma_E,c='tab:orange',fmt='none')
         #plt.title('Energy Resolution')
         plt.ylabel('Energy Resolution (%)')
         plt.xlabel('Energy (keV)')
@@ -579,12 +580,6 @@ class spectrum():
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
         
-    
-    def get_pulser_noise(self,
-        pulser_trap_heights):
-        '''
-        Get FWHM of pulser'''
-        return 0
             
     def find_fano_factor(self,
         W=2.96*10**-3,
@@ -618,7 +613,6 @@ class spectrum():
             fano factor of peaks
         '''
         print('Finding Fano Factor')
-        # E_noise=9.628062296356013
 
         self.fano_factor = (self.fwhms ** 2 - E_noise ** 2) / (2.355**2 * self.energies * W)
     
@@ -650,11 +644,11 @@ class spectrum():
             plt.savefig(plot_savefile)
 
         
-            
     def find_efficiency_calibration(self,
         source_dist):
         '''
         Find efficency calibration
+        WIP - not currently used
         
         Parameters
         ----------
@@ -666,8 +660,8 @@ class spectrum():
             efficency vs energy
         '''
         
-        
         efficiency = intrinsic_efficiency * geometric_efficency
+        return efficiency
         
 def find_trapezoid_heights(filtered_waveforms):
     '''
@@ -720,5 +714,16 @@ def plot_trapezoid_height_histogram(trapezoid_heights,
 def gaussian(x, A, x0, sigma):
     '''
     Definition of gaussian for use in FWHM/peak fitting
+    
+    Parameters
+    ----------
+    x: ndarray
+        x locations for fit
+    A: float
+        amplitude
+    x0: float
+        peak location
+    sigma: float
+        standard dev
     '''
     return A * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
