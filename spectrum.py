@@ -12,7 +12,7 @@ class spectrum():
     '''
     def __init__(self,
         filtered_waveforms,
-        trap_heights=None,
+        pileup=False,
         bins=2000,
         quantile=0.9905
         ):
@@ -44,11 +44,8 @@ class spectrum():
         #TODO change input to raw waveforms and call trapezoidal filter from here
         self.bins = bins
         
-        # find trapezoid heights if not provided
-        if trap_heights is None:
-            self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms)
-        else:
-            self.trapezoid_heights = trap_heights
+        # find trapezoid heights
+        self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms,pileup=pileup)
         
         self.make_calibration_spectrum(quantile=quantile)
         
@@ -663,7 +660,8 @@ class spectrum():
         efficiency = intrinsic_efficiency * geometric_efficency
         return efficiency
         
-def find_trapezoid_heights(filtered_waveforms):
+def find_trapezoid_heights(filtered_waveforms,
+    pileup=False):
     '''
     Find trapezoid heights for all waveforms
     
@@ -671,12 +669,25 @@ def find_trapezoid_heights(filtered_waveforms):
     ----------
     filtered_waveforms: np.array
         array of filtered waveforms
+    pileup: bool
+        whether to handle piled up pulses or not
         
     Returns
     -------
     trapezoidal_heights: np.array
         1D array of trapezoid height for each waveform
     '''
+    if pileup:
+        # initialize arrays
+        num_pulses = np.empty(len(filtered_waveforms))
+        trap_heights = []
+        
+        for i in range(len(filtered_waveforms)):
+            # find values greater than mean plus 1 std deviation
+            mask = filtered_waveforms[i] > filtered_waveforms[i].mean() + filtered_waveforms[i].std()
+            # find jumps in data
+            
+        
     return filtered_waveforms.max(axis=1)
 
 def plot_trapezoid_height_histogram(trapezoid_heights,
