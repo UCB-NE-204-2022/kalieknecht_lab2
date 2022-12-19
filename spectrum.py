@@ -74,8 +74,8 @@ class spectrum():
     def run_full_pipeline(self,
         energies,
         smoothed=False,
-        prominence=100,
-        width=[0,5],
+        prominence=50,
+        width=[0,10],
         alternative='greater',
         E_res_window=7):
         '''
@@ -102,19 +102,23 @@ class spectrum():
         # apply gaussian fit to found peaks
         self.fit_gaussian()
 
-        # ony perform energy calibration if more than one peak present
-        if len(self.peaks) > 1:
-            # find energy calibration
-            self.find_energy_calibration(energies,alternative=alternative)
+        # perform energy calibration
+        self.find_energy_calibration(energies,alternative=alternative)
+        
+        # find PC and PT ratios
+        self.find_PC_ratio()
+        self.find_PT_ratio()
         
         # find FWHMs
-        self.find_energy_resolution(E_window=E_res_window)
+        # self.find_energy_resolution()
         
         # find Fano Factor
         #self.find_fano_factor()
         
         print('Done!')
-        print('fwhms:',self.fwhms)
+        print('pc ratio:',self.pc_ratio)
+        print('pt ratio:',self.pt_ratio)
+        # print('fwhms:',self.fwhms)
         
     def make_calibration_spectrum(self,
         quantile=0.9905):
@@ -470,7 +474,8 @@ class spectrum():
             plt.savefig(plot_savefile)
             
     def find_PC_ratio(self,
-        compton_edge_setback=65):
+        compton_edge_setback=65,
+        compton_bin_width = 10):
         '''
         Find PC ratio of spectrum
         
@@ -494,10 +499,12 @@ class spectrum():
         # get count in typical channel of compton continuum
         
         # find compton edge to help with searching
-        compton_edge = find_compton_edge(self.energies)
+        compton_edge = find_compton_edge(self.energies[0])
         compton_edge_channels = np.argwhere(np.isclose(self.bin_energies,compton_edge,atol=1)).flatten()
         
-        compton_counts = self.counts[compton_edge_channels[0]-compton_edge_setback]
+        # compton_counts = self.counts[compton_edge_channels[0]-compton_edge_setback]
+        # sometimes this is 0, so just take the mean bin count over some range
+        compton_counts = self.counts[(compton_edge_channels[0]-compton_edge_setback - compton_bin_width):(compton_edge_channels[0]-compton_edge_setback + compton_bin_width)].mean()
         
         self.pc_ratio = (photopeak_counts / compton_counts)[0]
         
