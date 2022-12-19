@@ -335,17 +335,26 @@ class spectrum():
         # check that number of energies matches number of peaks
         assert len(self.peaks) == len(self.energies), "Number of peaks ("+str(len(self.peaks))+") and energies ("+str(len(self.energies))+") do not match. Change prominence."
         
-        # perform linear regression
-        result = linregress(self.x0,self.energies,alternative=alternative)
-        
-        # store relevant fit values
-        self.slope = result.slope
-        self.intercept = result.intercept
-        self.pvalue = result.pvalue
-        self.rvalue = result.rvalue
-        self.stderr = result.stderr
-        self.intercept_stderr = result.stderr
-        
+        # single point clibration method
+        if len(self.energies) == 1:
+            # hand make slope
+            self.intercept = 0
+            self.slope = (self.energies / self.x0)[0]
+            self.intercept = 0
+            
+        # multi point calibration method
+        else:
+            # perform linear regression
+            result = linregress(self.x0,self.energies,alternative=alternative)
+            
+            # store relevant fit values
+            self.slope = result.slope
+            self.intercept = result.intercept
+            self.pvalue = result.pvalue
+            self.rvalue = result.rvalue
+            self.stderr = result.stderr
+            self.intercept_stderr = result.stderr
+            
         # convert channels to energies
         self.bin_energies = self.perform_energy_calibration(self.channels)
         self.sigma_E = self.sigmas*self.slope
@@ -452,12 +461,66 @@ class spectrum():
         plt.ylabel('Energy (keV)')
         if show_equation:
             plt.text(0,np.quantile(self.bin_energies,0.8),self.print_energy_calibration())
-            plt.text(0,np.quantile(self.bin_energies,0.7),f'p_value = {self.pvalue:.3e}')
+            if len(self.energies) > 1:
+                plt.text(0,np.quantile(self.bin_energies,0.7),f'p_value = {self.pvalue:.3e}')
         plt.legend(loc='lower right')
         plt.tight_layout()
         plt.show()
         if plot_savefile is not None:
             plt.savefig(plot_savefile)
+            
+    def find_PC_ratio(self,
+        compton_edge_setback=65):
+        '''
+        Find PC ratio of spectrum
+        
+        PC ratio = count in highest photopeak channel / count in typical channel of Compton continuum assocaited with that peak
+        The sample of the continuum is to be taken in the relatively flat portion of the distribution lying to the left of the rise toward the Compton edge.
+        
+        Parameters
+        ----------
+        compton_edge_setback:
+            number of channels from compton edge to sample for PC ratio calculation
+        
+        Returns
+        -------
+        pc_ratio: float
+            PC ratio
+        
+        '''
+        # get count in highest photopeak channel
+        photopeak_counts = self.counts[self.peaks]
+        
+        # get count in typical channel of compton continuum
+        
+        # find compton edge to help with searching
+        compton_edge = find_compton_edge(self.energies)
+        compton_edge_channels = np.argwhere(np.isclose(self.bin_energies,compton_edge,atol=1)).flatten()
+        
+        compton_counts = self.counts[compton_edge_channels[0]-compton_edge_setback]
+        
+        self.pc_ratio = (photopeak_counts / compton_counts)[0]
+        
+    def find_PT_ratio(self):
+        '''
+        Find Peak-to-Total (PT) ratio
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        pt_ratio: float
+            PT ratio
+        
+        '''
+        # get count in highest photopeak channel
+        photopeak_counts = self.counts[self.peaks]
+        
+        total_counts = self.counts.sum()
+        
+        self.pt_ratio = (photopeak_counts / total_counts)[0]
+        
     
     def find_fwhm(self,
         show_plot=False,
@@ -738,3 +801,18 @@ def gaussian(x, A, x0, sigma):
         standard dev
     '''
     return A * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+
+def find_compton_edge(energy):
+    '''
+    Find energy of compton edge given gamma-ray energy
+    
+    Parameters
+    ----------
+    energy: float or ndarray
+        energy of gamma-ray in keV
+    Returns
+    -------
+    compton_edge: float or ndarray
+        energy of compton edge
+    '''
+    return (2 * energy**2) / (2 * energy + 511.)
