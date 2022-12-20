@@ -76,8 +76,7 @@ class spectrum():
         smoothed=False,
         prominence=50,
         width=[0,10],
-        alternative='greater',
-        E_res_window=7):
+        alternative='greater'):
         '''
         Runs full pipeline of spectrum tools
         
@@ -90,8 +89,13 @@ class spectrum():
         smoothed: bool
             whether to perform peak finding on smoothed spectrum
         prominence: float
-            prominence for peak fitting
-        
+            Required prominence of peaks. Either a number, None, an array matching x or a 2-element sequence of the former. 
+            The first element is always interpreted as the minimal and the second, if supplied, as the maximal required prominence.
+        width: number or ndarray
+            Required width of peaks in samples. Either a number, None, an array matching x or a 2-element sequence of the former. 
+            The first element is always interpreted as the minimal and the second, if supplied, as the maximal required width.
+        alternative: str
+            scipy.stats.linregress fitting alternative
         
         Returns
         -------
@@ -341,10 +345,10 @@ class spectrum():
         
         # single point clibration method
         if len(self.energies) == 1:
-            # hand make slope
-            self.intercept = 0
-            self.slope = (self.energies / self.x0)[0]
-            self.intercept = 0
+            # empirically determined intercept
+            self.intercept = 367.56
+            # hand calculate slope
+            self.slope = ((self.energies-self.intercept) / self.x0)[0]
             
         # multi point calibration method
         else:
@@ -474,7 +478,7 @@ class spectrum():
             plt.savefig(plot_savefile)
             
     def find_PC_ratio(self,
-        compton_edge_setback=65,
+        compton_edge_setback=30,
         compton_bin_width = 10):
         '''
         Find PC ratio of spectrum
