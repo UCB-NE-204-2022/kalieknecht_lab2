@@ -104,6 +104,7 @@ def plot_rise_time(waveform,
     plt.xlabel('Measurement Time (Clock Cycles)')
     plt.legend(fontsize=7)
     plt.xlim(t10+pretrigger[1]-plot_window,t90+pretrigger[1]+plot_window)
+    plt.tight_layout()
     plt.show()
     
     
