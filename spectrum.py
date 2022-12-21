@@ -76,7 +76,9 @@ class spectrum():
         smoothed=False,
         prominence=50,
         width=[0,10],
-        alternative='greater'):
+        calibration = None,
+        alternative='greater',
+        photopeak_channel=None):
         '''
         Runs full pipeline of spectrum tools
         
@@ -103,15 +105,22 @@ class spectrum():
         # find gamma ray peaks and prominences
         self.find_gamma_peaks(prominence=prominence,smoothed=smoothed,width=width)
         
-        # apply gaussian fit to found peaks
-        self.fit_gaussian()
+        if len(self.peaks) > 0:
+            # apply gaussian fit to found peaks
+            self.fit_gaussian()
+        else:
+            print('No Peaks found')
 
-        # perform energy calibration
-        self.find_energy_calibration(energies,alternative=alternative)
+        if calibration == None:
+            # perform energy calibration
+            self.find_energy_calibration(energies,alternative=alternative)
+        else:
+            # use preloaded calibration
+            self.load_energy_calibration(calibration)
         
         # find PC and PT ratios
-        self.find_PC_ratio()
-        self.find_PT_ratio()
+        self.find_PC_ratio(photopeak_channel=photopeak_channel)
+        self.find_PT_ratio(photopeak_channel=photopeak_channel)
         
         # find FWHMs
         # self.find_energy_resolution()
@@ -366,6 +375,32 @@ class spectrum():
         # convert channels to energies
         self.bin_energies = self.perform_energy_calibration(self.channels)
         self.sigma_E = self.sigmas*self.slope
+    
+    def load_energy_calibration(self,
+        calibration):
+        '''
+        Load previously determined energy calibration
+        
+        Parameters
+        ----------
+        calibration: list
+            [slope, y-intercept] of energy calibration
+        
+        Returns
+        -------
+        
+        '''
+        # store values
+        self.slope = calibration[0]
+        self.intercept = calibration[1]
+        # self.sigma_E = 
+        
+        # convert chanels to energies
+        self.bin_energies = self.perform_energy_calibration(self.channels)
+        self.sigma_E = self.sigmas * self.slope
+        
+        
+        
         
     def perform_energy_calibration(self,
         channels):
@@ -479,7 +514,8 @@ class spectrum():
             
     def find_PC_ratio(self,
         compton_edge_setback=30,
-        compton_bin_width = 10):
+        compton_bin_width = 10,
+        photopeak_channel=None):
         '''
         Find PC ratio of spectrum
         
@@ -497,8 +533,11 @@ class spectrum():
             PC ratio
         
         '''
-        # get count in highest photopeak channel
-        photopeak_counts = self.counts[self.peaks]
+        if photopeak_channel == None:
+            # get count in highest photopeak channel
+            photopeak_counts = self.counts[self.peaks]
+        else: 
+            photopeak_counts = self.counts[photopeak_channel]
         
         # get count in typical channel of compton continuum
         
@@ -512,7 +551,8 @@ class spectrum():
         
         self.pc_ratio = (photopeak_counts / compton_counts)[0]
         
-    def find_PT_ratio(self):
+    def find_PT_ratio(self,
+        photopeak_channel=None):
         '''
         Find Peak-to-Total (PT) ratio
         
@@ -526,7 +566,10 @@ class spectrum():
         
         '''
         # get count in highest photopeak channel
-        photopeak_counts = self.counts[self.peaks]
+        if photopeak_channel == None:
+            photopeak_counts = self.counts[self.peaks]
+        else:
+            photopeak_counts = self.counts[photopeak_channel]
         
         total_counts = self.counts.sum()
         
