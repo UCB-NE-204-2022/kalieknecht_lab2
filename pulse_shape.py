@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
 
 def find_rise_time(waveform,
     pretrigger=[0,500],
@@ -109,4 +110,27 @@ def plot_rise_time(waveform,
     
     
     
+def find_clusters(waveforms,n_clusters):
+    '''
+    Find clusters of waveforms
+    
+    Parameters
+    ----------
+    waveforms: ndarray
+        raw waveforms - should be cleaned to just leading edge of pulse
+    n_clusters: int
+        number of clusters to find
+    
+    Returns
+    -------
+    labels: ndarray
+        cluster label for each waveform, same len as waveforms
+    '''
+    # load clustering algorithm
+    kmeans = KMeans(n_clusters=n_clusters,random_state=42)
+    
+    # fit to data
+    kmeans.fit(waveforms)
+    
+    return kmeans.labels_
     
