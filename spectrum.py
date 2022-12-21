@@ -433,6 +433,7 @@ class spectrum():
         return string
         
     def plot_spectrum(self,
+        spectrum_color='tab:blue',
         energy=True,
         show_calibrated_peaks=True,
         semilogy=False,
@@ -442,6 +443,8 @@ class spectrum():
         
         Parameters
         ----------
+        spectrum_color: str
+            matplotlib.pyplot color to use in plotting spectrum
         energy: bool
             if true, plots x as energy, otherwise plots as channel number
         show_calibrated_peaks: bool
@@ -459,11 +462,11 @@ class spectrum():
         plt.figure()
         # Plot energy spectrum if desired
         if energy:
-            plt.plot(self.bin_energies, self.counts)
+            plt.plot(self.bin_energies, self.counts,c=spectrum_color)
             plt.xlabel('Energy (keV)')
         # Otherwise plot counts vs channels
         else:
-            plt.plot(self.channels,self.counts)
+            plt.plot(self.channels,self.counts,c=spectrum_color)
             plt.xlabel('Channel')
         
         plt.ylabel('Counts')
