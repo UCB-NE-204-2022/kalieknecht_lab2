@@ -12,6 +12,7 @@ class spectrum():
     '''
     def __init__(self,
         filtered_waveforms,
+        preloaded=False,
         pileup=False,
         bins=2000,
         quantile=0.9905
@@ -23,6 +24,8 @@ class spectrum():
         ----------
         filtered_waveforms: np.array
             array of filtered waveforms
+        preloaded: bool
+            whether to use preloaded calibration
         bins: int
             number of bins in spectrum
         quantile: float
@@ -47,7 +50,7 @@ class spectrum():
         # find trapezoid heights
         self.trapezoid_heights = find_trapezoid_heights(filtered_waveforms,pileup=pileup)
         
-        self.make_calibration_spectrum(quantile=quantile)
+        self.make_calibration_spectrum(preloaded=preloaded,quantile=quantile)
         
     def add_additional_data(self,
         additional_waveforms):
@@ -116,7 +119,7 @@ class spectrum():
             self.find_energy_calibration(energies,alternative=alternative)
         else:
             # use preloaded calibration
-            self.load_energy_calibration(calibration)
+            self.load_energy_calibration(energies,calibration)
         
         # find PC and PT ratios
         self.find_PC_ratio(photopeak_channel=photopeak_channel)
@@ -134,6 +137,7 @@ class spectrum():
         # print('fwhms:',self.fwhms)
         
     def make_calibration_spectrum(self,
+        preloaded=False,
         quantile=0.9905):
         '''
         Make calibration spectrum
@@ -159,9 +163,14 @@ class spectrum():
         # cut max range to desired quantile of data
         # this is done to remove high end of spectrum from bad filtered pulses
         # quantile value can be changed to 1 if bad filtering is fixed
-        self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
-            bins=self.bins, 
-            range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
+        if preloaded:
+            bins = np.load('calibration/hist_edges.npy')
+            self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
+                bins=bins)
+        else:
+            self.counts, self.bin_edges = np.histogram(self.trapezoid_heights, 
+                bins=self.bins, 
+                range=(self.trapezoid_heights.min(),np.quantile(self.trapezoid_heights,quantile)))
         # find bin centers
         self.bin_centers = np.diff(self.bin_edges)
         # re-map channels to integers
@@ -377,6 +386,7 @@ class spectrum():
         self.sigma_E = self.sigmas*self.slope
     
     def load_energy_calibration(self,
+        energies,
         calibration):
         '''
         Load previously determined energy calibration
@@ -390,6 +400,8 @@ class spectrum():
         -------
         
         '''
+        # store energies to class
+        self.energies = np.array(energies)
         # store values
         self.slope = calibration[0]
         self.intercept = calibration[1]
@@ -397,10 +409,7 @@ class spectrum():
         
         # convert chanels to energies
         self.bin_energies = self.perform_energy_calibration(self.channels)
-        self.sigma_E = self.sigmas * self.slope
-        
-        
-        
+        # self.sigma_E = self.sigmas * self.slope
         
     def perform_energy_calibration(self,
         channels):
