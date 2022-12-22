@@ -133,7 +133,9 @@ class spectrum():
         
         print('Done!')
         print('pc ratio:',self.pc_ratio)
+        print('pc ratio unc:',self.pc_ratio_sigma)
         print('pt ratio:',self.pt_ratio)
+        print('pt ratio unc:',self.pt_ratio_sigma)
         # print('fwhms:',self.fwhms)
         
     def make_calibration_spectrum(self,
@@ -562,6 +564,7 @@ class spectrum():
         compton_counts = self.counts[(compton_edge_channels[0]-compton_edge_setback - compton_bin_width):(compton_edge_channels[0]-compton_edge_setback + compton_bin_width)].mean()
         
         self.pc_ratio = (photopeak_counts / compton_counts)[0]
+        self.pc_ratio_sigma = (np.sqrt(photopeak_counts) / photopeak_counts + np.sqrt(compton_counts)/compton_counts)[0]
         
     def find_PT_ratio(self,
         photopeak_channel=None):
@@ -586,6 +589,7 @@ class spectrum():
         total_counts = self.counts.sum()
         
         self.pt_ratio = (photopeak_counts / total_counts)[0]
+        self.pt_ratio_sigma = (np.sqrt(photopeak_counts) / photopeak_counts + np.sqrt(total_counts)/total_counts)[0]
         
     
     def find_fwhm(self,
